@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from timm.models.crossvit import CrossAttention
 
 class AttnProcessor(nn.Module):
     r"""
@@ -289,7 +289,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
             The context length of the image features.
     """
 
-    def __init__(self, hidden_size, cross_attention_dim=None, scale=1.0, num_tokens=4, skip=False):
+    def __init__(self, hidden_size, cross_attention_dim=None, scale=1.0, num_tokens=4, skip=False,train_content_branch_only=False):#change
         super().__init__()
 
         if not hasattr(F, "scaled_dot_product_attention"):
@@ -300,9 +300,31 @@ class IPAttnProcessor2_0(torch.nn.Module):
         self.scale = scale
         self.num_tokens = num_tokens
         self.skip = skip
+        self.train_content_branch_only = train_content_branch_only
 
         self.to_k_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
         self.to_v_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
+
+        # change 新增：用于单一风格 embedding 的投影层
+        self.to_k_style = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
+        self.to_v_style = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
+
+        # change 多主体 content embedding 的数量控制 Cross-Attention 模块
+        self.num_control_attn = CrossAttention(dim=hidden_size, num_heads=8)
+
+        # change 如果只训练内容注入分支，则冻结其他参数
+        if self.train_content_branch_only:
+            self.freeze_except_content_branch()
+
+    def freeze_except_content_branch(self):#change
+        """
+        冻结除 self.num_control_attn 之外的所有参数，
+        这样在训练时只更新用于内容注入的跨注意力模块。
+        """
+        for name, param in self.named_parameters():
+            if "num_control_attn" not in name:
+                param.requires_grad = False
+        print("[DEBUG] Frozen all parameters except for the multi-content cross-attention branch (num_control_attn).")
 
     def __call__(
         self,
@@ -311,22 +333,22 @@ class IPAttnProcessor2_0(torch.nn.Module):
         encoder_hidden_states=None,
         attention_mask=None,
         temb=None,
+        **kwargs
     ):
         residual = hidden_states
 
+        # [A] 常规预处理
         if attn.spatial_norm is not None:
             hidden_states = attn.spatial_norm(hidden_states, temb)
-
         input_ndim = hidden_states.ndim
-
         if input_ndim == 4:
             batch_size, channel, height, width = hidden_states.shape
             hidden_states = hidden_states.view(batch_size, channel, height * width).transpose(1, 2)
-
         batch_size, sequence_length, _ = (
             hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
         )
 
+        seq_len = hidden_states.shape[1] if encoder_hidden_states is None else encoder_hidden_states.shape[1]
         if attention_mask is not None:
             attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
             # scaled_dot_product_attention expects attention_mask shape to be
@@ -338,15 +360,18 @@ class IPAttnProcessor2_0(torch.nn.Module):
 
         query = attn.to_q(hidden_states)
 
+        # [B] 先做文本 Cross-Attn
         if encoder_hidden_states is None:
             encoder_hidden_states = hidden_states
+            ip_hidden_states = None
         else:
             # get encoder_hidden_states, ip_hidden_states
-            end_pos = encoder_hidden_states.shape[1] - self.num_tokens
+            '''end_pos = encoder_hidden_states.shape[1] - self.num_tokens
             encoder_hidden_states, ip_hidden_states = (
                 encoder_hidden_states[:, :end_pos, :],
                 encoder_hidden_states[:, end_pos:, :],
-            )
+            )'''#change delete
+            ip_hidden_states = None
             if attn.norm_cross:
                 encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
 
@@ -357,7 +382,6 @@ class IPAttnProcessor2_0(torch.nn.Module):
         head_dim = inner_dim // attn.heads
 
         query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
-
         key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
@@ -368,37 +392,119 @@ class IPAttnProcessor2_0(torch.nn.Module):
         )
 
         hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
-        hidden_states = hidden_states.to(query.dtype)
+       #change delete hidden_states = hidden_states.to(query.dtype)
+        attn_output_text = hidden_states#change add
 
-        if not self.skip:
+        # [C] 注入 "ip_hidden_states" (老 IP-Adapter 逻辑, 暂时保留
+        '''if (not self.skip) and (ip_hidden_states is not None):
             # for ip-adapter
             ip_key = self.to_k_ip(ip_hidden_states)
             ip_value = self.to_v_ip(ip_hidden_states)
-
             ip_key = ip_key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
             ip_value = ip_value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+            ip_out = F.scaled_dot_product_attention(
+                query, ip_key, ip_value,
+                attn_mask=None, dropout_p=0.0, is_causal=False
+            )
+            ip_out = ip_out.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
+            attn_output_text = attn_output_text + self.scale * ip_out
+
+        hidden_states = attn_output_text'''
+        if (not self.skip) and (ip_hidden_states is not None):
+            ip_key = self.to_k_ip(ip_hidden_states)
+            ip_value = self.to_v_ip(ip_hidden_states)
+            ip_key = attn.head_to_batch_dim(ip_key)
+            ip_value = attn.head_to_batch_dim(ip_value)
+            ip_attention_probs = attn.get_attention_scores(query, ip_key, None)
+            self.attn_map = ip_attention_probs
+            ip_hidden_states = torch.bmm(ip_attention_probs, ip_value)
+            ip_hidden_states = attn.batch_to_head_dim(ip_hidden_states)
+            attn_output_text = attn_output_text + self.scale * ip_hidden_states
+
+        hidden_states = attn_output_text
+
+        # [D] 注入 style_emb (单一风格), 如果外部传入 style_emb
+        style_emb = kwargs.get("style_emb", None)
+        if (not self.skip) and (style_emb is not None):
+            # style_emb 预期形状：[batch, style_tokens, hidden_dim]
+            style_key = self.to_k_style(style_emb)
+            style_value = self.to_v_style(style_emb)
+            style_key = style_key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+            style_value = style_value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+
+            style_out = F.scaled_dot_product_attention(
+                query, style_key, style_value,
+                attn_mask=None, dropout_p=0.0, is_causal=False
+            )
+            style_out = style_out.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
+            hidden_states = hidden_states + self.scale * style_out
+
+        # [E] 多主体 content_emb_list（支持权重注入 + 自适应早停）
+        content_emb_list = kwargs.get("content_emb_list", None)
+        content_weights = kwargs.get("content_weights", None)  # list[float] | torch.Tensor | None
+        early_stop_th = kwargs.get("content_early_stop_th", None)  # float | None
+        run_record = kwargs.get("run_record", None)  # dict | None (mutable)
+
+        final_h = hidden_states
+        inject_count = 0
+        early_stop_triggered = False
+
+        if (not self.skip) and (content_emb_list is not None):
+            for idx, subj_emb in enumerate(content_emb_list):
+                attn_out_subj = self.num_control_attn(x=final_h, y=subj_emb)
+
+                if content_weights is None:
+                    w = 1.0
+                else:
+                    if torch.is_tensor(content_weights):
+                        w = content_weights[idx].item() if content_weights.dim() == 1 else content_weights[
+                            0, idx].item()
+                    else:
+                        w = float(content_weights[idx])
+
+                final_h = final_h + (w * attn_out_subj)
+                inject_count += 1
+
+                if early_stop_th is not None:
+                    delta = attn_out_subj.detach().float().norm().item()
+                    if delta < float(early_stop_th):
+                        early_stop_triggered = True
+                        if isinstance(run_record, dict):
+                            run_record["early_stop_triggered"] = True
+                            run_record["early_stop_at_subject_idx"] = int(idx)
+                            run_record["early_stop_delta_norm"] = float(delta)
+                        break
+
+        if isinstance(run_record, dict):
+            run_record.setdefault("early_stop_triggered", bool(early_stop_triggered))
+            run_record["actual_injections"] = int(inject_count)
+
+        hidden_states = final_h
 
             # the output of sdp = (batch, num_heads, seq_len, head_dim)
             # TODO: add support for attn.scale when we move to Torch 2.1
-            ip_hidden_states = F.scaled_dot_product_attention(
-                query, ip_key, ip_value, attn_mask=None, dropout_p=0.0, is_causal=False
-            )
-            with torch.no_grad():
-                self.attn_map = query @ ip_key.transpose(-2, -1).softmax(dim=-1)
-                #print(self.attn_map.shape)
+            #ip_hidden_states = F.scaled_dot_product_attention(
+            #    query, ip_key, ip_value, attn_mask=None, dropout_p=0.0, is_causal=False
+            #)
+            #with torch.no_grad():
+            #    self.attn_map = query @ ip_key.transpose(-2, -1).softmax(dim=-1)
+            #    #print(self.attn_map.shape)
 
-            ip_hidden_states = ip_hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
-            ip_hidden_states = ip_hidden_states.to(query.dtype)
+            #ip_hidden_states = ip_hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
+            #ip_hidden_states = ip_hidden_states.to(query.dtype)
 
-            hidden_states = hidden_states + self.scale * ip_hidden_states
+            #hidden_states = hidden_states + self.scale * ip_hidden_states
 
+
+
+        # [F] 最后 out proj + residual
         # linear proj
         hidden_states = attn.to_out[0](hidden_states)
         # dropout
         hidden_states = attn.to_out[1](hidden_states)
 
         if input_ndim == 4:
-            hidden_states = hidden_states.transpose(-1, -2).reshape(batch_size, channel, height, width)
+            hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, channel, height, width)#change (-1,-2)to (1,2)
 
         if attn.residual_connection:
             hidden_states = hidden_states + residual

@@ -5,8 +5,8 @@ from PIL import Image
 from ip_adapter import IPAdapter
 
 base_model_path = "runwayml/stable-diffusion-v1-5"
-image_encoder_path = "models/image_encoder"
-ip_ckpt = "models/ip-adapter_sd15.bin"
+image_encoder_path = r"./models/image_encoder"
+ip_ckpt = r"./models/ip-adapter_sd15.bin"
 device = "cuda"
 
 # load SDXL pipeline
@@ -44,7 +44,7 @@ else:
 
 # generate image with content subtraction
 images = ip_model.generate(pil_image=image,
-                           prompt="a cat, masterpiece, best quality, high quality",
+                           prompt="a dog, Border collie, masterpiece, best quality, high quality",
                            negative_prompt= "text, watermark, lowres, low quality, worst quality, deformed, glitch, low contrast, noisy, saturation, blurry",
                            scale=1.0,
                            guidance_scale=5,
@@ -54,4 +54,4 @@ images = ip_model.generate(pil_image=image,
                            neg_content_emb=neg_content_emb,
                           )
 
-images[0].save("result.png")
+images[0].save("result1.png")

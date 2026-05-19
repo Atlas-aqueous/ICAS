@@ -25,11 +25,11 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if str(device).__contains__("cuda") else torch.float32
 
 # initialization
-base_model_path = "stabilityai/stable-diffusion-xl-base-1.0"
-image_encoder_path = "sdxl_models/image_encoder"
-ip_ckpt = "sdxl_models/ip-adapter_sdxl.bin"
+base_model_path = r"./stabilityai/stable-diffusion-xl-base-1.0"
+image_encoder_path = r"./sdxl_models/image_encoder"
+ip_ckpt = r"./sdxl_models/ip-adapter_sdxl.bin"
 
-controlnet_path = "diffusers/controlnet-canny-sdxl-1.0"
+controlnet_path = r"./diffusers/controlnet-canny-sdxl-1.0"
 controlnet = ControlNetModel.from_pretrained(controlnet_path, use_safetensors=False, torch_dtype=torch.float16).to(device)
 
 # load SDXL pipeline
