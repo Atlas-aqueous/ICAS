@@ -1,0 +1,30 @@
+{
+  "mode": "ours",
+  "style_path": "./assets/style2.jpg",
+  "content_path": "./assets/snow.jpeg",
+  "output_name": "image2_ours",
+  "edge_density": 0.04283051470588235,
+  "conflict_score": 0.0856610294117647,
+  "style_scale_used": 0.9486033823529412,
+  "control_scale_used": 0.8256983088235295,
+  "content_weights": [
+    0.5,
+    0.5
+  ],
+  "multi_subject_emb": 2,
+  "content_early_stop_th": 0.001,
+  "base_scale": 0.9486033823529412,
+  "schedule_p1": 0.3,
+  "schedule_p2": 0.7,
+  "schedule_floor_coeff": 0.4,
+  "p1_step": 9,
+  "p2_step": 21,
+  "scale_start": 0.9486033823529412,
+  "scale_end": 0.3794413529411765,
+  "scale_points": {
+    "0": 0.9486033823529412,
+    "9": 0.9486033823529412,
+    "21": 0.3794413529411765,
+    "29": 0.3794413529411765
+  }
+}
