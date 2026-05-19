@@ -1,0 +1,4 @@
+5004438321 ./diffusers/controlnet-canny-sdxl-1.0/diffusion_pytorch_model.bin
+5004167864 ./diffusers/controlnet-canny-sdxl-1.0/diffusion_pytorch_model.safetensors
+2502401039 ./diffusers/controlnet-canny-sdxl-1.0/diffusion_pytorch_model.fp16.bin
+2502139136 ./diffusers/controlnet-canny-sdxl-1.0/diffusion_pytorch_model.fp16.safetensors

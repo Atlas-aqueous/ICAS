@@ -1,0 +1,2 @@
+6938078334 ./sd_xl_base_1.0_0.9vae.safetensors
+6938078334 ./sd_xl_base_1.0.safetensors
