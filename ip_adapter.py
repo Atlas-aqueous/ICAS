@@ -12,7 +12,7 @@ from safetensors import safe_open
 from timm.models.crossvit import CrossAttention
 from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
 
-from .utils import is_torch2_available, get_generator
+from .utils import is_torch2_available, get_generator, load_legacy_adapter
 
 if is_torch2_available():
     from .attention_processor import (
@@ -154,7 +154,7 @@ class IPAdapter:
                     elif key.startswith("ip_adapter."):
                         state_dict["ip_adapter"][key.replace("ip_adapter.", "")] = f.get_tensor(key)
         else:
-            state_dict = torch.load(self.ip_ckpt, map_location="cpu")
+            state_dict = load_legacy_adapter(self.ip_ckpt)
         self.image_proj_model.load_state_dict(state_dict["image_proj"])
         ip_layers = torch.nn.ModuleList(self.pipe.unet.attn_processors.values())
         ip_layers.load_state_dict(state_dict["ip_adapter"], strict=False)

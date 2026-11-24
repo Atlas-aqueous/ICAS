@@ -40,7 +40,7 @@ Expected structure:
 ./diffusers/controlnet-canny-sdxl-1.0/diffusion_pytorch_model.fp16.safetensors
 ./diffusers/controlnet-canny-sdxl-1.0/diffusion_pytorch_model.fp16.bin
 
-Only one compatible weight format is required for normal use. If the code loads .safetensors, keep the .safetensors file. If the code loads .bin, keep the .bin file.
+The demo and inference examples use the standard .safetensors weights.
 
 ## 3. IP-Adapter Weights
 

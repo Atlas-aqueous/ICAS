@@ -6,7 +6,7 @@ from ip_adapter import IPAdapterPlusXL
 ##ipadapterxl plus
 base_model_path = r"./stabilityai/stable-diffusion-xl-base-1.0"
 image_encoder_path = r"./models/image_encoder"
-ip_ckpt = r"./sdxl_models/ip-adapter-plus_sdxl_vit-h.bin"
+ip_ckpt = r"./sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors"
 device = "cuda"
 
 # load SDXL pipeline

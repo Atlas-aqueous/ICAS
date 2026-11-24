@@ -52,7 +52,7 @@ base_model_path = r"./stabilityai/stable-diffusion-xl-base-1.0"
 image_encoder_path, ip_ckpt = load_ip_adapter_files()
 
 controlnet_path = r"./diffusers/controlnet-canny-sdxl-1.0"
-controlnet = ControlNetModel.from_pretrained(controlnet_path, use_safetensors=False, torch_dtype=torch.float16).to(device)
+controlnet = ControlNetModel.from_pretrained(controlnet_path, use_safetensors=True, torch_dtype=torch.float16).to(device)
 
 # load SDXL pipeline
 pipe = StableDiffusionXLControlNetPipeline.from_pretrained(

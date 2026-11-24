@@ -1,3 +1,4 @@
+from packaging.version import Version
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -91,3 +92,10 @@ def get_generator(seed, device):
         generator = None
 
     return generator
+
+
+def load_legacy_adapter(path):
+    version = Version(torch.__version__)
+    if version.is_prerelease or version < Version("2.10") or Version("2.14") <= version < Version("2.15"):
+        raise RuntimeError("Legacy adapter weights require stable PyTorch 2.10-2.13 or 2.15+.")
+    return torch.load(path, map_location="cpu", weights_only=True)

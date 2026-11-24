@@ -6,7 +6,7 @@ from ip_adapter import IPAdapter
 
 base_model_path = "runwayml/stable-diffusion-v1-5"
 image_encoder_path = r"./models/image_encoder"
-ip_ckpt = r"./models/ip-adapter_sd15.bin"
+ip_ckpt = r"./models/ip-adapter_sd15.safetensors"
 device = "cuda"
 
 # load SDXL pipeline
