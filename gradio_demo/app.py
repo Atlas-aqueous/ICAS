@@ -1,23 +1,46 @@
 import sys
 sys.path.append('./')
 
-import os 
+import hashlib
+from pathlib import Path
+
 import cv2
 import torch
 import random
 import numpy as np
 from PIL import Image
 from diffusers import ControlNetModel, StableDiffusionXLControlNetPipeline
+from huggingface_hub import snapshot_download
 
 import spaces
 import gradio as gr
 
 from ip_adapter import IPAdapterXL
 
-import os
-os.system("git lfs install")
-os.system("git clone https://huggingface.co/h94/IP-Adapter")
-os.system("mv IP-Adapter/sdxl_models sdxl_models")
+IP_ADAPTER_REVISION = "018e402774aeeddd60609b4ecdb7e298259dc729"
+IP_ADAPTER_FILE = "sdxl_models/ip-adapter_sdxl.safetensors"
+IMAGE_ENCODER_WEIGHTS = "sdxl_models/image_encoder/model.safetensors"
+MODEL_SHA256 = {
+    IP_ADAPTER_FILE: "ba1002529e783604c5f326d49f0122025392d1d20ac8d573b3eeb3e6dea4ebb6",
+    IMAGE_ENCODER_WEIGHTS: "657723e09f46a7c3957df651601029f66b1748afb12b419816330f16ed45d64d",
+}
+
+
+def load_ip_adapter_files():
+    snapshot = Path(snapshot_download(
+        "h94/IP-Adapter",
+        revision=IP_ADAPTER_REVISION,
+        allow_patterns=["sdxl_models/image_encoder/config.json", *MODEL_SHA256],
+        token=False,
+    ))
+    for filename, expected in MODEL_SHA256.items():
+        digest = hashlib.sha256()
+        with (snapshot / filename).open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        if digest.hexdigest() != expected:
+            raise ValueError(f"SHA-256 mismatch for {filename}")
+    return str((snapshot / IMAGE_ENCODER_WEIGHTS).parent), str(snapshot / IP_ADAPTER_FILE)
 
 # global variable
 MAX_SEED = np.iinfo(np.int32).max
@@ -26,8 +49,7 @@ dtype = torch.float16 if str(device).__contains__("cuda") else torch.float32
 
 # initialization
 base_model_path = r"./stabilityai/stable-diffusion-xl-base-1.0"
-image_encoder_path = r"./sdxl_models/image_encoder"
-ip_ckpt = r"./sdxl_models/ip-adapter_sdxl.bin"
+image_encoder_path, ip_ckpt = load_ip_adapter_files()
 
 controlnet_path = r"./diffusers/controlnet-canny-sdxl-1.0"
 controlnet = ControlNetModel.from_pretrained(controlnet_path, use_safetensors=False, torch_dtype=torch.float16).to(device)
